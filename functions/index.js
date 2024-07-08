@@ -1,9 +1,25 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
+import { database } from 'firebase-functions';
+import { initializeApp, messaging } from 'firebase-admin';
+import { getDatabase, ref, set, push, query, orderByChild, startAfter, limitToFirst, get, endAt, equalTo, endBefore } from 'firebase/database';
 
-admin.initializeApp();
+// export {
+//   getDatabase,
+//   ref,
+//   set,
+//   push,
+//   query,
+//   orderByChild,
+//   startAfter,
+//   limitToFirst,
+//   get,
+//   endAt,
+//   equalTo,
+//   endBefore,
+// };
 
-exports.sendNotificationOnWrite = functions.database
+initializeApp();
+
+export const sendNotificationOnWrite_updated = database
   .ref('Almanac')
   .onWrite(async (change, context) => {
     const newRecord = change.after.val();
@@ -14,29 +30,44 @@ exports.sendNotificationOnWrite = functions.database
       body: newRecord['Account Name'],
     };
 
-    // Get all registered devices (replace with your token retrieval logic)
-    const tokens = 'enSWWn8KQ-OhvrHVPRUpl3:APA91bGkfLvHLUhK394IlhUr_AxmnN1DgdzF8sSEuAulUCyIe012gRRNROh3tG-Sww55Q3qr6l_-_ZyKDhL9m79wP3p7qC_EIg0SgVDd0g9RHLKvXdOvDdkUiCCOApdg6D2vmMoDB28n';
-
-    // Create a message object
+    // Define a generic topic name (can be anything)
+    const topic = "all_users_topic"; // Replace with your preferred name
+   
+    async function getInitialTokens(firebaseApp) {
+      const database = getDatabase(firebaseApp);
+      const reference = ref(database, 'Notification_Token');
+    
+      try {
+        const snapshot = await once(reference); // Fetch a single snapshot
+        const tokenList = _mapSnapshotToTokenList(snapshot.val()); // Assuming _mapSnapshotToTokenList is adapted for JavaScript
+        return tokenList;
+      } catch (error) {
+        console.error('Error fetching initial tokens:', error);
+        return []; // Return empty list on error
+      }
+    }
+    // Create a message object with the topic
     const message = {
       notification: notificationData,
       android: {
         priority: "high", // Set priority (optional)
       },
       // Add iOS specific options if needed
-      token: tokens, // Broadcast to all retrieved tokens
+      topic: topic,
     };
+    console.log(message)
+     
+    const token_list = await getInitialTokens();
 
-    // Send notification to all devices
-    await admin.messaging().sendToDevice(message);
+   const batchedTokens = chunk(token_list, 1000); // Adjust chunk size as needed
 
-    console.log('Notification sent successfully to all devices!');
+  for (const batch of batchedTokens) {
+    try {
+      const response = await messaging().sendToDevice(batch, message);
+      console.log('Successfully sent notification to:', response.successCount, 'devices');
+    } catch (error) {
+      console.error('Error sending notification:', error);
+    }
+  }
+    // console.log(message:'Notification sent successfully to topic:');
   });
-
-// This function needs to be implemented based on your specific token storage method
-async function getDeviceTokens() {
-  // Replace this with your logic to retrieve all registered device tokens
-  // This could involve querying a database or fetching from a central storage location
-  const tokens = []; // Placeholder for retrieved tokens
-  return tokens;
-}
